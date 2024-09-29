@@ -2,3 +2,4 @@ uvicorn
 fastapi
 sqlalchemy
 pandas
+psycopg2
