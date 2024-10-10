@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from .database import SessionLocal, load_data
-from .models import Track
+from .models import Track, TrackCreate, TrackTable
 import pandas as pd
 
 router = APIRouter()
@@ -39,6 +39,7 @@ def load_data_to_db():
         session.commit()
         return {"message": "Data loaded successfully"}
     except Exception as e:
+        # Ensure the database remains consistent
         session.rollback()
         return {"error": str(e)}
     finally:
@@ -70,59 +71,64 @@ def get_track_by_artist(artist_name: str):
     track = df[df["artist(s)_name"].str.contains(artist_name, case=False, na=False)]
     return track.to_dict(orient="records") if not track.empty else {f"error: No tracks found for the {artist_name}."}
 
+@router.post("/tracks/", response_model=Track)
+def create_track(new_track: TrackCreate):
+    """Endpoint to create a new track in the database."""
+    session = SessionLocal()
+    try:
+        track = TrackTable(  # Creating an instance of the ORM model
+            track_name=new_track.track_name,
+            artist_name=new_track.artist_name,
+            artist_count=new_track.artist_count,
+            released_year=new_track.released_year,
+            released_month=new_track.released_month,
+            released_day=new_track.released_day,
+            in_spotify_playlists=new_track.in_spotify_playlists,
+            streams=new_track.streams,
+            in_apple_playlists=new_track.in_apple_playlists,
+            in_deezer_playlists=new_track.in_deezer_playlists,
+            bpm=new_track.bpm,
+            key=new_track.key,
+            mode=new_track.mode,
+            danceability=new_track.danceability,
+            valence=new_track.valence,
+            energy=new_track.energy,
+            acousticness=new_track.acousticness,
+            instrumentalness=new_track.instrumentalness,
+            liveness=new_track.liveness,
+            speechiness=new_track.speechiness,
+            cover_url=new_track.cover_url,
+        )
+        session.add(track)
+        session.commit()
+        session.refresh(track)
+        return track
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create track: {str(e)}")
+    finally:
+        session.close()
 
-# # Update a Track
-# @router.put("/tracks/{track_id}")
-# def update_track(track_id: int, track: Track):
-#     """Endpoint to update a track record."""
-#     session = SessionLocal()
-#     try:
-#         existing_track = session.query(Track).filter(Track.id == track_id).first()
-#         if not existing_track:
-#             return {"error": "Track not found."}
-#
-#         for key, value in track.dict().items():
-#             setattr(existing_track, key, value)
-#
-#         session.commit()
-#         return {"message": "Track updated successfully."}
-#     except Exception as e:
-#         session.rollback()
-#         return {"error": str(e)}
-#     finally:
-#         session.close()
-#
-# # Delete a Track
-# @router.delete("/tracks/{track_id}")
-# def delete_track(track_id: int):
-#     """Endpoint to delete a track."""
-#     session = SessionLocal()
-#     try:
-#         track = session.query(Track).filter(Track.id == track_id).first()
-#         if not track:
-#             return {"error": "Track not found."}
-#
-#         session.delete(track)
-#         session.commit()
-#         return {"message": "Track deleted successfully."}
-#     except Exception as e:
-#         session.rollback()
-#         return {"error": str(e)}
-#     finally:
-#         session.close()
-#
-# # Provide Statistics
-# @router.get("/tracks/stats/")
-# def get_tracks_statistics():
-#     """Endpoint to get statistics about the dataset."""
-#     df = load_data()
-#     total_tracks = len(df)
-#     total_streams = df['streams'].sum()
-#     average_energy = df['energy_%'].mean()
-#
-#     return {
-#         "total_tracks": total_tracks,
-#         "total_streams": total_streams,
-#         "average_energy": average_energy
-#     }
 
+@router.delete("/tracks/{track_id}", response_model=dict)
+def delete_track(track_id: int):
+    """Endpoint to delete a track by its ID."""
+    session = SessionLocal()
+    try:
+        # Query the track by its ID
+        track = session.query(TrackTable).filter(TrackTable.id == track_id).first()
+
+        # Check if the track exists
+        if not track:
+            raise HTTPException(status_code=404, detail="Track not found")
+
+        session.delete(track)  # Delete the track from the session
+        session.commit()  # Commit the transaction
+        return {"message": "Track deleted successfully"}
+
+    except Exception as e:
+        session.rollback()  # Rollback on error
+        raise HTTPException(status_code=500, detail=f"Failed to delete track: {str(e)}")
+
+    finally:
+        session.close()  # Close the session
